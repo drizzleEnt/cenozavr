@@ -2,8 +2,10 @@ package scraper
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
 	"log"
+	"os"
 	"path"
 	"time"
 
@@ -61,37 +63,46 @@ func (s *srv) Scrap() error {
 	for _, v := range productsNode {
 		var product Product
 		//Get name
-		chromedp.Run(ctx, chromedp.Text(".product-name", &product.ProductName, chromedp.ByQuery, chromedp.FromNode(v)))
+		err := chromedp.Run(ctx, chromedp.Text(".product-name", &product.ProductName, chromedp.ByQuery, chromedp.FromNode(v)))
+		if err != nil {
+			log.Print("could not get product name")
+		}
 
 		var ok bool
 
 		//Get product url
-		chromedp.Run(ctx, chromedp.AttributeValue(".product-name > a", "href", &product.ProductUrl, &ok, chromedp.ByQuery, chromedp.FromNode(v)))
-		if !ok {
-			log.Print("could not get product url")
+		err = chromedp.Run(ctx, chromedp.AttributeValue(".product-name > a", "href", &product.ProductUrl, &ok, chromedp.ByQuery, chromedp.FromNode(v)))
+		if err != nil {
+			log.Print("could not get product name")
 		}
 		product.ProductUrl = path.Join(okeyURL, product.ProductUrl)
 
 		//Get small image url
-		chromedp.Run(ctx, chromedp.AttributeValue(".product-image img", "data-src", &product.SmallImg, &ok, chromedp.ByQuery, chromedp.FromNode(v)))
-		if !ok {
-			log.Print("could not get small image url")
+		err = chromedp.Run(ctx, chromedp.AttributeValue(".product-image img", "data-src", &product.SmallImg, &ok, chromedp.ByQuery, chromedp.FromNode(v)))
+		if err != nil {
+			log.Print("could not get product image url")
 		}
 		product.SmallImg = path.Join(okeyImgUrl, product.SmallImg)
 		product.BigImg = product.SmallImg
 
 		//Get old price
-		chromedp.Run(ctx, chromedp.Text(".label.crossed", &product.OldPrice, chromedp.ByQuery, chromedp.FromNode(v)))
-
+		err = chromedp.Run(ctx, chromedp.Text(".label.crossed", &product.OldPrice, chromedp.ByQuery, chromedp.FromNode(v)))
+		if err != nil {
+			log.Print("could not get product price")
+		}
 		//Get current price
-		chromedp.Run(ctx, chromedp.Text(".label.price:last-child", &product.Price, chromedp.ByQuery, chromedp.FromNode(v)))
+		err = chromedp.Run(ctx, chromedp.Text(".label.price:last-child", &product.Price, chromedp.ByQuery, chromedp.FromNode(v)))
+		if err != nil {
+			log.Print("could not get product current price")
+		}
 
 		goods = append(goods, product)
 	}
 
-	for _, v := range goods {
-		fmt.Println(v)
+	if err := save(goods); err != nil {
+		return err
 	}
+
 	return nil
 }
 
@@ -101,4 +112,47 @@ func tasks() chromedp.Tasks {
 		network.SetExtraHTTPHeaders(map[string]interface{}{"User-Agent": userAgent}),
 		chromedp.Navigate(okeyMiaso),
 	}
+}
+
+func save(products []Product) error {
+	file, err := os.Create("./bin/products.csv")
+	if err != nil {
+		return err
+	}
+
+	defer file.Close()
+
+	w := csv.NewWriter(file)
+	defer w.Flush()
+
+	headers := []string{
+		"name",
+		"url",
+		"small imgUrl",
+		"big imgUrl",
+		"current price",
+		"old price",
+	}
+
+	err = w.Write(headers)
+	if err != nil {
+		return err
+	}
+
+	for _, p := range products {
+		record := []string{
+			p.ProductName,
+			p.ProductUrl,
+			p.SmallImg,
+			p.BigImg,
+			p.Price,
+			p.OldPrice,
+		}
+		err := w.Write(record)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
